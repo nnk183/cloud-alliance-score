@@ -1,5 +1,7 @@
 # ☁️ Cloud Alliance Score
 
+![CI](https://github.com/nnk183/cloud-alliance-score/actions/workflows/ci.yml/badge.svg)
+
 A **multi-agent account scorer** that evaluates companies as potential cloud
 alliance accounts for a **LangChain × Google Cloud (GCP)** partnership.
 
@@ -256,12 +258,7 @@ the API, and the CLI.
 
 `.github/workflows/ci.yml` runs **ruff + mypy + pytest** on Python 3.11 and 3.12
 for every push and pull request to `main`. Because the tests are fully faked, CI
-needs **no secrets**. After pushing to GitHub, add a status badge by replacing
-`OWNER/REPO` below:
-
-```markdown
-![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)
-```
+needs **no secrets**. The status badge is at the top of this README.
 
 ## License
 
