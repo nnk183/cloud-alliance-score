@@ -13,6 +13,12 @@ Built on **LangGraph** (supervisor → 5 parallel sub-agents → aggregator),
 **Claude** for scoring, **Tavily** for web evidence, and **LangSmith** for
 observability.
 
+It runs in two modes:
+- **Single Company Score** — name a company, get its scorecard.
+- **Discovery Mode** — name a *vendor pair* (e.g. "LangChain × GCP"); it
+  generates candidate companies, validates they're real, scores them with the
+  same engine (on cheaper **Claude Haiku**), and returns a ranked shortlist.
+
 ---
 
 ## How it works
@@ -153,6 +159,33 @@ for ds in resp.composite.dimension_scores:
     print(ds.dimension_name, ds.score, ds.reasoning)
 ```
 
+### Discovery Mode
+
+Find candidate accounts for a vendor pair instead of naming a company.
+
+```python
+from cloud_alliance_score.pipeline import discover_candidates
+
+result = discover_candidates("LangChain × GCP", n_candidates=5)
+for c in result.results:
+    print(c.rank, c.scorecard.company_name, c.composite_score, c.tier.value)
+```
+
+```bash
+# API
+curl -s http://localhost:8000/discover \
+  -H "Content-Type: application/json" \
+  -d '{"vendor_pair": "LangChain × GCP", "n_candidates": 5}' | jq
+```
+
+**How it works:** generate ~30 candidate names (1 LLM call) → validate each is a
+real company via Tavily + a cheap Haiku confirmation (drop hallucinations) →
+score the validated ones with the **existing scoring engine** (reused, not
+duplicated) on **Claude Haiku** → rank by composite, return top N. The number
+*scored* is capped (`CAS_DISCOVERY_MAX_SCORE`, default 10) to bound cost, and
+whole runs are cached 24h per vendor pair. See [EXAMPLES.md](EXAMPLES.md) for a
+real Discovery run. The Streamlit UI exposes it as a **Discovery Mode** tab.
+
 > `score_company` lives in `cloud_alliance_score.pipeline`; it is the single
 > entry point shared by the CLI, API, and UI.
 
@@ -231,7 +264,14 @@ src/cloud_alliance_score/
 │   ├── state.py        # graph state (additive reducer for parallel scores)
 │   ├── nodes.py        # fan-out, generic sub-agent, aggregator
 │   └── build.py        # ScoringDependencies + graph wiring
-├── pipeline.py         # score_company() — the public entry point
+├── discovery/          # Discovery Mode
+│   ├── generator.py    # LLM proposes candidate companies
+│   ├── validator.py    # Tavily + Haiku confirm each is real (drop hallucinations)
+│   ├── ranker.py       # sort scored candidates, take top N
+│   ├── runtime.py      # DiscoveryDependencies + orchestration (reuses the engine)
+│   ├── cache.py        # 24h whole-run cache per vendor pair
+│   └── schemas.py      # Discovery request/response models
+├── pipeline.py         # score_company() + discover_candidates() — public entry points
 ├── api.py              # FastAPI app
 └── scripts_entry.py    # CLI (score-company)
 app/streamlit_app.py    # Streamlit UI

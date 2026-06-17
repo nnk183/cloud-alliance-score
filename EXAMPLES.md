@@ -85,6 +85,46 @@ the foothold.
 
 ---
 
+## 4. Discovery Mode — "LangChain × GCP" (real run)
+
+Instead of naming a company, give Discovery a **vendor pair** and it finds the
+candidates for you: it generates company names, validates each is real (via
+Tavily), scores the validated ones with the engine (on **Claude Haiku**, for
+cheap batch scoring), and ranks them.
+
+```bash
+# CLI-equivalent via Python
+python -c "from cloud_alliance_score import discover_candidates as d; print(d('LangChain × GCP', 5))"
+# or the API
+curl -s localhost:8000/discover -H 'Content-Type: application/json' \
+  -d '{"vendor_pair": "LangChain × GCP", "n_candidates": 5}'
+```
+
+A real run (generated 10 → validated 10 → scored 5, ~37s on Haiku):
+
+| Rank | Company | GCP | AI | Industry | LangChain | Strategic | **Total** | **Tier** |
+|:--:|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| **1** | Databricks | 5 | 5 | 5 | 4 | 4 | **23/25** | **Tier 1** |
+| **2** | Shopify | 5 | 5 | 4 | 3 | 5 | **22/25** | **Tier 1** |
+| **3** | Stripe | 1 | 5 | 5 | 4 | 4 | **19/25** | **Tier 2** |
+| **4** | Figma | — | — | — | — | — | **18/25** | **Tier 2** |
+| **5** | Notion | — | — | — | — | — | **12/25** | **Tier 2** |
+
+**#1 Databricks (23/25):** *"Perfect marks across GCP commitment, AI maturity,
+and industry fit — deep native integrations with Google Cloud, production-grade
+MLOps, and Fortune 500 penetration."*
+
+**#2 Shopify (22/25):** *"Exceptional GCP commitment (5/5), AI maturity (5/5),
+and executive-level AI mandate (5/5) — an AI-native customer processing $292B
+annually across commerce infrastructure."*
+
+> Note: scores come from live search and the (cheaper) Haiku model, so they
+> differ slightly from the Sonnet single-company runs above — e.g. Stripe here
+> is 19 vs 17. Both correctly flag Stripe's weak GCP footprint (1/5, an AWS shop).
+> Re-running the same vendor pair within 24h returns the cached result instantly.
+
+---
+
 ### Reading a scorecard
 
 - **Composite** is the simple sum of the five 1–5 dimension scores (max 25).

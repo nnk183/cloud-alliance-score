@@ -65,6 +65,17 @@ class Settings(BaseSettings):
     demo_daily_cap: int = Field(default=25, alias="CAS_DEMO_DAILY_CAP")
     demo_session_cap: int = Field(default=3, alias="CAS_DEMO_SESSION_CAP")
 
+    # --- Discovery Mode -------------------------------------------------------
+    # Surface + score candidate accounts for a vendor pair. Uses a cheaper model
+    # (Haiku) for batch scoring, and caps how many candidates are actually scored
+    # (the dominant cost) independently of how many names are generated.
+    discovery_model: str = Field(default="claude-haiku-4-5", alias="CAS_DISCOVERY_MODEL")
+    discovery_generate_count: int = Field(default=30, alias="CAS_DISCOVERY_GENERATE_COUNT")
+    discovery_max_score: int = Field(default=10, alias="CAS_DISCOVERY_MAX_SCORE")
+    discovery_max_candidates: int = Field(default=10, alias="CAS_DISCOVERY_MAX_CANDIDATES")
+    discovery_concurrency: int = Field(default=4, alias="CAS_DISCOVERY_CONCURRENCY")
+    discovery_cache_ttl_seconds: int = Field(default=86_400, alias="CAS_DISCOVERY_CACHE_TTL_SECONDS")
+
     def require_anthropic(self) -> str:
         if not self.anthropic_api_key:
             raise RuntimeError(

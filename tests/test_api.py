@@ -111,3 +111,47 @@ def test_score_rate_limited_returns_429(client, monkeypatch):
     resp = client.post("/score", json={"company_name": "Stripe"})
     assert resp.status_code == 429
     assert "limit" in resp.json()["detail"].lower()
+
+
+# --- discovery endpoint -----------------------------------------------------
+
+
+def _fake_discovery(vendor_pair, n_candidates=10):
+    from cloud_alliance_score.discovery.schemas import DiscoveryResponse, ScoredCandidate
+
+    results = [
+        ScoredCandidate(rank=1, scorecard=_fake_response("Capital One")),
+        ScoredCandidate(rank=2, scorecard=_fake_response("Stripe")),
+    ]
+    return DiscoveryResponse(
+        vendor_pair=vendor_pair, requested=n_candidates, generated=30, validated=22,
+        scored=10, results=results, model_used="claude-haiku-4-5",
+    )
+
+
+def test_discover_happy_path(client, monkeypatch):
+    monkeypatch.setattr(pipeline, "discover_candidates", _fake_discovery)
+    resp = client.post("/discover", json={"vendor_pair": "LangChain × GCP", "n_candidates": 5})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["vendor_pair"] == "LangChain × GCP"
+    assert body["generated"] == 30 and body["validated"] == 22
+    assert body["results"][0]["scorecard"]["company_name"] == "Capital One"
+    assert body["results"][0]["rank"] == 1
+
+
+def test_discover_validation_error(client):
+    assert client.post("/discover", json={"vendor_pair": "   "}).status_code == 422
+
+
+def test_discover_rate_limited_returns_429(client, monkeypatch):
+    monkeypatch.setattr(api, "get_settings", lambda: Settings(_env_file=None, CAS_DEMO_MODE=True))
+
+    class _Exhausted:
+        cap = 0
+        def consume(self):
+            return False
+
+    monkeypatch.setattr(api, "get_rate_limiter", lambda settings: _Exhausted())
+    resp = client.post("/discover", json={"vendor_pair": "LangChain × GCP"})
+    assert resp.status_code == 429

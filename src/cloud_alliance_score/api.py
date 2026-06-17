@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import __version__
 from .config import get_settings
 from .demo import get_rate_limiter, list_demo_companies, load_demo_scorecard
+from .discovery.schemas import DiscoveryRequest, DiscoveryResponse
 from .schemas import ScoringRequest, ScoringResponse
 
 logger = logging.getLogger(__name__)
@@ -109,6 +110,38 @@ def score(request: ScoringRequest) -> ScoringResponse:
     except Exception as exc:  # noqa: BLE001
         logger.exception("scoring failed for %r", request.company_name)
         raise HTTPException(status_code=500, detail=f"scoring failed: {exc}") from exc
+
+
+@app.post("/discover", response_model=DiscoveryResponse)
+def discover(request: DiscoveryRequest) -> DiscoveryResponse:
+    """Discover and rank candidate accounts for a vendor pair.
+
+    Discovery is far more expensive than a single score (it scores many
+    companies), so in demo mode it consumes the daily cap and `n_candidates`
+    is clamped to `discovery_max_candidates` by the pipeline.
+    """
+    settings = get_settings()
+
+    if settings.demo_mode:
+        limiter = get_rate_limiter(settings)
+        if not limiter.consume():
+            raise HTTPException(
+                status_code=429,
+                detail="Daily demo limit reached. Try a pre-computed example, or come back tomorrow.",
+            )
+
+    from .pipeline import discover_candidates
+
+    try:
+        return discover_candidates(
+            vendor_pair=request.vendor_pair, n_candidates=request.n_candidates
+        )
+    except RuntimeError as exc:
+        logger.warning("discovery misconfiguration: %s", exc)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("discovery failed for %r", request.vendor_pair)
+        raise HTTPException(status_code=500, detail=f"discovery failed: {exc}") from exc
 
 
 __all__ = ["app"]

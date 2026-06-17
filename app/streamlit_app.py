@@ -1,11 +1,11 @@
 """Streamlit UI for the cloud alliance scorer.
 
-Two modes, controlled by the CAS_DEMO_MODE setting:
+Tabs:
+  * Single Company Score — score one company live.
+  * Discovery Mode — surface + rank candidate accounts for a vendor pair.
 
-* Normal (default): a single input box that scores any company live.
-* Demo (CAS_DEMO_MODE=true): a curated gallery of pre-computed scorecards
-  (instant, free) plus a rate-limited "score your own" box — safe to expose
-  publicly without strangers burning your API credits.
+Demo mode (CAS_DEMO_MODE=true) adds a free pre-computed gallery and rate-limits
+the live actions so a public deployment can't burn API credits.
 
 Run locally:  streamlit run app/streamlit_app.py
 """
@@ -15,7 +15,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# Make `src/` importable when running from a checkout.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 import streamlit as st  # noqa: E402
@@ -26,7 +25,7 @@ from cloud_alliance_score.demo import (  # noqa: E402
     list_demo_companies,
     load_demo_scorecard,
 )
-from cloud_alliance_score.pipeline import score_company  # noqa: E402
+from cloud_alliance_score.pipeline import discover_candidates, score_company  # noqa: E402
 from cloud_alliance_score.schemas import ScoringResponse, Tier  # noqa: E402
 
 TIER_COLORS = {Tier.TIER_1: "#1a7f37", Tier.TIER_2: "#9a6700", Tier.TIER_3: "#cf222e"}
@@ -40,20 +39,20 @@ settings = get_settings()
 # ---------------------------------------------------------------------------
 
 
+def _tier_badge(tier: Tier) -> str:
+    return f"<span style='color:{TIER_COLORS[tier]};font-weight:700'>{tier.value}</span>"
+
+
 def render_scorecard(resp: ScoringResponse, *, precomputed: bool = False) -> None:
     comp = resp.composite
-    color = TIER_COLORS[comp.tier]
-
     st.markdown(
-        f"<h2 style='margin-bottom:0'>{resp.company_name} — "
-        f"<span style='color:{color}'>{comp.tier.value}</span></h2>",
+        f"<h3 style='margin-bottom:0'>{resp.company_name} — {_tier_badge(comp.tier)}</h3>",
         unsafe_allow_html=True,
     )
     st.progress(comp.total_score / 25, text=f"Composite {comp.total_score} / 25")
     if resp.summary:
         st.info(resp.summary)
 
-    st.subheader("Dimension breakdown")
     cols = st.columns(5)
     for col, ds in zip(cols, comp.dimension_scores):
         col.metric(ds.dimension_name, f"{ds.score}/5")
@@ -61,119 +60,147 @@ def render_scorecard(resp: ScoringResponse, *, precomputed: bool = False) -> Non
     for ds in comp.dimension_scores:
         with st.expander(f"{ds.dimension_name} — {ds.score}/5"):
             st.write(ds.reasoning)
-            if ds.evidence:
-                st.caption("Evidence")
-                for ev in ds.evidence:
-                    st.markdown(f"- [{ev.title}]({ev.url}) — {ev.snippet[:160]}…")
-            else:
-                st.caption("No web evidence found for this dimension.")
+            for ev in ds.evidence:
+                st.markdown(f"- [{ev.title}]({ev.url}) — {ev.snippet[:160]}…")
 
     tag = "pre-computed sample" if precomputed else f"model: {resp.model_used}"
     st.caption(f"{tag} · generated {resp.generated_at:%Y-%m-%d %H:%M UTC}")
-    with st.expander("Raw JSON"):
-        st.json(resp.model_dump(mode="json"))
+
+
+def render_discovery(resp) -> None:
+    st.markdown(f"### Top accounts for **{resp.vendor_pair}**")
+    st.caption(
+        f"Generated {resp.generated} · validated {resp.validated} · scored {resp.scored}"
+        f" · model {resp.model_used}" + (" · (cached)" if resp.cached else "")
+    )
+    for sc in resp.results:
+        comp = sc.scorecard.composite
+        st.markdown(
+            f"**#{sc.rank}. {sc.scorecard.company_name}** — "
+            f"{comp.total_score}/25 · {_tier_badge(comp.tier)}",
+            unsafe_allow_html=True,
+        )
+        st.progress(comp.total_score / 25)
+        with st.expander("Full scorecard"):
+            render_scorecard(sc.scorecard)
 
 
 # ---------------------------------------------------------------------------
-# Header
+# Action panels (shared by normal + demo modes)
+# ---------------------------------------------------------------------------
+
+
+def single_company_panel(*, gated: bool) -> None:
+    with st.form("score_form"):
+        company = st.text_input("Company name", placeholder="e.g. Stripe")
+        context = st.text_input("Optional context", placeholder="e.g. payments platform")
+        submitted = st.form_submit_button("Score account", type="primary")
+    if not submitted:
+        return
+    if not company.strip():
+        st.error("Please enter a company name.")
+        return
+    if not _keys_ready():
+        return
+    if gated and not _consume_quota():
+        return
+    with st.spinner(f"Scoring {company} across 5 dimensions…"):
+        try:
+            render_scorecard(score_company(company, optional_context=context or None))
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Scoring failed: {exc}")
+
+
+def discovery_panel(*, gated: bool) -> None:
+    st.caption(
+        "Generate candidate companies for a partnership, validate they're real, "
+        "then score and rank them. Takes ~1–2 min."
+    )
+    with st.form("discover_form"):
+        vendor_pair = st.text_input("Vendor pair", value="LangChain × GCP")
+        n = st.slider("How many to return", 1, settings.discovery_max_candidates, 5)
+        submitted = st.form_submit_button("Discover candidates", type="primary")
+    if not submitted:
+        return
+    if not vendor_pair.strip():
+        st.error("Please enter a vendor pair.")
+        return
+    if not _keys_ready():
+        return
+    if gated and not _consume_quota():
+        return
+    with st.spinner(f"Discovering accounts for {vendor_pair}… this can take 1–2 min."):
+        try:
+            render_discovery(discover_candidates(vendor_pair, n_candidates=n))
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Discovery failed: {exc}")
+
+
+def _keys_ready() -> bool:
+    if settings.anthropic_api_key and settings.tavily_api_key:
+        return True
+    st.error("ANTHROPIC_API_KEY and TAVILY_API_KEY must be set on the server.")
+    return False
+
+
+def _consume_quota() -> bool:
+    """Demo-mode guard: session cap + daily cap. Returns True if allowed."""
+    st.session_state.setdefault("runs", 0)
+    if st.session_state["runs"] >= settings.demo_session_cap:
+        st.warning("You've hit this session's limit. Try the gallery instead!")
+        return False
+    limiter = DailyRateLimiter.from_settings(settings)
+    if not limiter.consume():
+        st.warning("The daily demo limit is reached. Come back tomorrow!")
+        return False
+    st.session_state["runs"] += 1
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Page
 # ---------------------------------------------------------------------------
 
 st.title("☁️ Cloud Alliance Score")
-st.caption("Score companies as cloud alliance accounts for a **LangChain × GCP** partnership.")
-
-
-# ---------------------------------------------------------------------------
-# Demo mode: gallery + rate-limited live scoring
-# ---------------------------------------------------------------------------
+st.caption("Score & discover cloud alliance accounts for a **LangChain × GCP** partnership.")
 
 if settings.demo_mode:
-    limiter = DailyRateLimiter.from_settings(settings)
-    st.session_state.setdefault("session_runs", 0)
-
     st.info(
-        "🎬 **Live demo.** Browse pre-scored companies for free, or score your "
-        "own — live scoring is rate-limited to protect API credits."
+        "🎬 **Live demo.** Browse pre-scored companies free, or run live "
+        "scoring/discovery — capped to protect API credits."
     )
-
-    gallery = list_demo_companies()
-    tab_gallery, tab_live = st.tabs(["📚 Gallery (instant)", "🔎 Score your own"])
-
+    tab_gallery, tab_score, tab_discover = st.tabs(
+        ["📚 Gallery (instant)", "🔎 Single Company", "🧭 Discovery Mode"]
+    )
     with tab_gallery:
-        if not gallery:
-            st.warning("No pre-computed scorecards are bundled.")
-        else:
+        gallery = list_demo_companies()
+        if gallery:
             labels = {name: slug for name, slug in gallery}
             choice = st.selectbox("Pick a company", list(labels.keys()))
             resp = load_demo_scorecard(labels[choice])
             if resp:
                 render_scorecard(resp, precomputed=True)
-
-    with tab_live:
-        remaining_day = limiter.remaining()
-        session_left = settings.demo_session_cap - st.session_state["session_runs"]
-        st.caption(
-            f"Remaining today: **{remaining_day}** · this session: **{max(0, session_left)}**"
+        else:
+            st.warning("No pre-computed scorecards bundled.")
+    with tab_score:
+        single_company_panel(gated=True)
+    with tab_discover:
+        discovery_panel(gated=True)
+else:
+    with st.sidebar:
+        st.subheader("Configuration")
+        st.write("Model:", f"`{settings.model}`")
+        st.write("Discovery model:", f"`{settings.discovery_model}`")
+        st.write("Anthropic key:", "✅" if settings.anthropic_api_key else "❌ missing")
+        st.write("Tavily key:", "✅" if settings.tavily_api_key else "❌ missing")
+        st.write(
+            "LangSmith:",
+            "✅ tracing" if (settings.langsmith_tracing and settings.langsmith_api_key) else "—",
         )
-        with st.form("live_form"):
-            company = st.text_input("Company name", placeholder="e.g. Spotify")
-            context = st.text_input("Optional context", placeholder="e.g. music streaming")
-            go = st.form_submit_button("Score live", type="primary")
+        st.caption("Set keys in a `.env` file (see `.env.example`).")
 
-        if go:
-            if not company.strip():
-                st.error("Please enter a company name.")
-            elif session_left <= 0:
-                st.warning("You've hit this session's limit. Browse the gallery instead!")
-            elif not limiter.allow():
-                st.warning("The daily demo limit is reached. Try the gallery, or come back tomorrow.")
-            elif not (settings.anthropic_api_key and settings.tavily_api_key):
-                st.error("Server is missing API keys — contact the site owner.")
-            else:
-                limiter.consume()
-                st.session_state["session_runs"] += 1
-                with st.spinner(f"Scoring {company} across 5 dimensions…"):
-                    try:
-                        resp = score_company(company, optional_context=context or None)
-                        render_scorecard(resp)
-                    except Exception as exc:  # noqa: BLE001
-                        st.error(f"Scoring failed: {exc}")
-
-    st.stop()  # demo mode handled; skip the normal single-box flow below
-
-
-# ---------------------------------------------------------------------------
-# Normal mode: score any company live
-# ---------------------------------------------------------------------------
-
-with st.sidebar:
-    st.subheader("Configuration")
-    st.write("Model:", f"`{settings.model}`")
-    st.write("Anthropic key:", "✅" if settings.anthropic_api_key else "❌ missing")
-    st.write("Tavily key:", "✅" if settings.tavily_api_key else "❌ missing")
-    st.write(
-        "LangSmith:",
-        "✅ tracing" if (settings.langsmith_tracing and settings.langsmith_api_key) else "—",
-    )
-    st.write("Cache:", "on" if settings.cache_enabled else "off")
-    st.caption("Set keys in a `.env` file (see `.env.example`).")
-
-with st.form("score_form"):
-    company = st.text_input("Company name", placeholder="e.g. Stripe")
-    context = st.text_input("Optional context", placeholder="e.g. payments platform")
-    submitted = st.form_submit_button("Score account", type="primary")
-
-if submitted:
-    if not company.strip():
-        st.error("Please enter a company name.")
-        st.stop()
-    if not (settings.anthropic_api_key and settings.tavily_api_key):
-        st.error("ANTHROPIC_API_KEY and TAVILY_API_KEY must be set. See the sidebar.")
-        st.stop()
-
-    with st.spinner(f"Scoring {company} across 5 dimensions…"):
-        try:
-            resp = score_company(company, optional_context=context or None)
-        except Exception as exc:  # noqa: BLE001
-            st.error(f"Scoring failed: {exc}")
-            st.stop()
-    render_scorecard(resp)
+    tab_score, tab_discover = st.tabs(["🔎 Single Company Score", "🧭 Discovery Mode"])
+    with tab_score:
+        single_company_panel(gated=False)
+    with tab_discover:
+        discovery_panel(gated=False)

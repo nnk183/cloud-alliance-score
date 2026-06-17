@@ -11,6 +11,8 @@ from functools import lru_cache
 from typing import Optional
 
 from .config import Settings, configure_langsmith, get_settings
+from .discovery.runtime import DiscoveryDependencies, run_discovery
+from .discovery.schemas import DiscoveryResponse
 from .graph.build import ScoringDependencies, build_scoring_graph
 from .schemas import ScoringResponse
 
@@ -53,4 +55,35 @@ def score_company(
     return result["response"]
 
 
-__all__ = ["score_company"]
+def discover_candidates(
+    vendor_pair: str,
+    n_candidates: int = 10,
+    settings: Optional[Settings] = None,
+    deps: Optional[DiscoveryDependencies] = None,
+) -> DiscoveryResponse:
+    """Discover and rank candidate accounts for a vendor pair.
+
+    Generates company candidates, validates they are real, scores them with the
+    existing engine (on the cheaper Discovery model), and returns the top N
+    ranked. `n_candidates` is clamped to `discovery_max_candidates` to bound
+    public-demo cost.
+
+    Args:
+        vendor_pair: e.g. "LangChain × GCP".
+        n_candidates: how many top-ranked candidates to return.
+        settings: optional override; defaults to process settings.
+        deps: optional injected dependencies (tests); defaults from settings.
+    """
+    vendor_pair = (vendor_pair or "").strip()
+    if not vendor_pair:
+        raise ValueError("vendor_pair must not be empty")
+
+    settings = settings or get_settings()
+    configure_langsmith(settings)
+
+    n = max(1, min(n_candidates, settings.discovery_max_candidates))
+    deps = deps or DiscoveryDependencies.from_settings(settings)
+    return run_discovery(vendor_pair, n, deps)
+
+
+__all__ = ["score_company", "discover_candidates"]

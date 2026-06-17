@@ -37,11 +37,17 @@ def _build_chat_model(
     )
 
 
-def get_chat_model(settings: Optional[Settings] = None) -> ChatAnthropic:
-    """Return a shared ChatAnthropic instance built from Settings."""
+def get_chat_model(
+    settings: Optional[Settings] = None, model: Optional[str] = None
+) -> ChatAnthropic:
+    """Return a shared ChatAnthropic instance built from Settings.
+
+    `model` overrides `settings.model` — used by Discovery Mode to run batch
+    scoring on a cheaper model (Haiku) without disturbing the default.
+    """
     settings = settings or get_settings()
     return _build_chat_model(
-        model=settings.model,
+        model=model or settings.model,
         temperature=settings.temperature,
         max_tokens=settings.max_tokens,
         timeout=settings.request_timeout,
