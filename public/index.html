@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Cloud Alliance Score — LangChain × GCP</title>
-<meta name="description" content="Score companies as cloud alliance accounts for a LangChain × GCP partnership across five dimensions." />
+<meta name="description" content="Score and discover companies as cloud alliance accounts for a LangChain × GCP partnership." />
 <style>
   :root {
     --bg: #0d1117; --card: #161b22; --line: #30363d; --text: #e6edf3;
@@ -12,28 +12,23 @@
     --t1: #3fb950; --t2: #d29922; --t3: #f85149;
   }
   * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    line-height: 1.5;
-  }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; }
   .wrap { max-width: 760px; margin: 0 auto; padding: 32px 20px 80px; }
   h1 { font-size: 1.8rem; margin: 0 0 4px; }
-  .sub { color: var(--muted); margin: 0 0 28px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
   label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: 6px; }
-  input[type=text] {
-    width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line);
-    background: #0d1117; color: var(--text); font-size: 1rem;
-  }
+  input[type=text] { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: #0d1117; color: var(--text); font-size: 1rem; }
   .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
-  .row > div { flex: 1; min-width: 180px; }
-  button {
-    padding: 10px 18px; border-radius: 8px; border: 0; background: var(--accent);
-    color: white; font-weight: 600; font-size: .95rem; cursor: pointer;
-  }
+  .row > div { flex: 1; min-width: 160px; }
+  select { padding: 10px; border-radius: 8px; border: 1px solid var(--line); background: #0d1117; color: var(--text); }
+  button { padding: 10px 18px; border-radius: 8px; border: 0; background: var(--accent); color: white; font-weight: 600; font-size: .95rem; cursor: pointer; }
   button:disabled { opacity: .5; cursor: not-allowed; }
   button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); font-weight: 500; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tab { padding: 8px 16px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; }
+  .tab.active { background: var(--accent); color: white; border-color: var(--accent); }
   .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
   .muted { color: var(--muted); font-size: .85rem; }
   .badge { display: inline-block; padding: 3px 12px; border-radius: 999px; font-weight: 700; font-size: .9rem; }
@@ -45,14 +40,15 @@
   .dim-head { display: flex; justify-content: space-between; font-weight: 600; }
   .bar { height: 8px; border-radius: 999px; background: #21262d; margin: 6px 0; overflow: hidden; }
   .bar > i { display: block; height: 100%; background: var(--accent); }
-  details { margin-top: 6px; }
-  summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
-  .ev { font-size: .82rem; color: var(--muted); margin: 6px 0 0 14px; }
-  .ev a { color: var(--accent); }
+  details { margin-top: 6px; } summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
+  .ev { font-size: .82rem; color: var(--muted); margin: 6px 0 0 14px; } .ev a { color: var(--accent); }
   .summary-box { background: rgba(47,129,247,.08); border: 1px solid rgba(47,129,247,.25); border-radius: 8px; padding: 12px 14px; margin: 14px 0; }
+  .rank-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .rank-num { font-size: 1.2rem; font-weight: 800; color: var(--muted); min-width: 28px; }
   .err { color: var(--t3); }
   .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .hidden { display: none; }
   footer { margin-top: 30px; color: var(--muted); font-size: .8rem; text-align: center; }
   a { color: var(--accent); }
 </style>
@@ -60,115 +56,133 @@
 <body>
 <div class="wrap">
   <h1>☁️ Cloud Alliance Score</h1>
-  <p class="sub">Scoring companies as <strong>LangChain × GCP</strong> alliance accounts across 5 dimensions.</p>
+  <p class="sub">Score &amp; discover <strong>LangChain × GCP</strong> alliance accounts across 5 dimensions.</p>
 
-  <div class="card">
+  <div class="tabs">
+    <button class="tab active" id="tab-score" onclick="switchTab('score')">🔎 Score a company</button>
+    <button class="tab" id="tab-discover" onclick="switchTab('discover')">🧭 Discovery Mode</button>
+  </div>
+
+  <!-- Score panel -->
+  <div class="card" id="panel-score">
     <div class="row">
-      <div>
-        <label for="company">Company name</label>
-        <input id="company" type="text" placeholder="e.g. Spotify" />
-      </div>
-      <div>
-        <label for="context">Optional context</label>
-        <input id="context" type="text" placeholder="e.g. music streaming" />
-      </div>
+      <div><label for="company">Company name</label><input id="company" type="text" placeholder="e.g. Spotify" /></div>
+      <div><label for="context">Optional context</label><input id="context" type="text" placeholder="e.g. music streaming" /></div>
       <button id="scoreBtn">Score live</button>
     </div>
-    <p class="muted" id="liveNote" style="margin:12px 0 0">
-      Live scoring runs 5 AI agents (~30–60s). Or explore pre-scored examples below — instant &amp; free.
-    </p>
+    <p class="muted" id="liveNote" style="margin:12px 0 0">Live scoring runs 5 AI agents (~30–60s). Or explore pre-scored examples — instant &amp; free:</p>
     <div class="chips" id="gallery"></div>
+  </div>
+
+  <!-- Discovery panel -->
+  <div class="card hidden" id="panel-discover">
+    <div class="row">
+      <div><label for="vendor">Vendor pair</label><input id="vendor" type="text" value="LangChain × GCP" /></div>
+      <div style="flex:0 0 auto"><label for="ncand">How many</label>
+        <select id="ncand"><option>3</option><option selected>5</option></select></div>
+      <button id="discoverBtn">Discover</button>
+    </div>
+    <p class="muted" style="margin:12px 0 0">Generates candidate companies, validates they're real, then scores &amp; ranks them. Takes ~1–2 min.</p>
   </div>
 
   <div id="result"></div>
 
-  <footer>
-    Built with LangGraph · Claude · Tavily · LangSmith ·
-    <a href="https://github.com/nnk183/cloud-alliance-score" id="repoLink">source</a>
-  </footer>
+  <footer>Built with LangGraph · Claude · Tavily · LangSmith ·
+    <a href="https://github.com/nnk183/cloud-alliance-score">source</a></footer>
 </div>
 
 <script>
 const API = "/api";
 const result = document.getElementById("result");
 const tierClass = t => ({ "Tier 1": "t1", "Tier 2": "t2", "Tier 3": "t3" }[t] || "t2");
+const bar = s => `<div class="bar"><i style="width:${s * 20}%"></i></div>`;
+
+function switchTab(which) {
+  document.getElementById("panel-score").classList.toggle("hidden", which !== "score");
+  document.getElementById("panel-discover").classList.toggle("hidden", which !== "discover");
+  document.getElementById("tab-score").classList.toggle("active", which === "score");
+  document.getElementById("tab-discover").classList.toggle("active", which === "discover");
+  result.innerHTML = "";
+}
+
+function scorecardHTML(resp, tag) {
+  const c = resp.composite;
+  const dims = c.dimension_scores.map(d => `
+    <div class="dim"><div class="dim-head"><span>${d.dimension_name}</span><span>${d.score}/5</span></div>
+      ${bar(d.score)}<div class="muted">${d.reasoning}</div>
+      ${d.evidence && d.evidence.length ? `<details><summary>${d.evidence.length} evidence source(s)</summary>${
+        d.evidence.map(e => `<div class="ev">• <a href="${e.url}" target="_blank" rel="noopener">${e.title}</a></div>`).join("")}</details>` : ""}
+    </div>`).join("");
+  return `<div style="display:flex;justify-content:space-between;align-items:center">
+      <h2 style="margin:0">${resp.company_name}</h2><span class="badge ${tierClass(c.tier)}">${c.tier}</span></div>
+    <div class="total">${c.total_score}<span class="muted" style="font-size:1rem">/25</span></div>
+    ${resp.summary ? `<div class="summary-box">${resp.summary}</div>` : ""}${dims}
+    ${tag ? `<p class="muted" style="margin-top:16px">${tag}</p>` : ""}`;
+}
+
+function renderScore(resp, tag) {
+  result.innerHTML = `<div class="card">${scorecardHTML(resp, tag)}</div>`;
+  result.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderDiscovery(d) {
+  const rows = d.results.map(r => {
+    const c = r.scorecard.composite;
+    return `<details><summary class="rank-row">
+        <span class="rank-num">#${r.rank}</span>
+        <span style="flex:1"><strong>${r.scorecard.company_name}</strong></span>
+        <span>${c.total_score}/25</span> <span class="badge ${tierClass(c.tier)}">${c.tier}</span>
+      </summary><div style="padding:12px 0 4px">${scorecardHTML(r.scorecard, "")}</div></details>`;
+  }).join("");
+  result.innerHTML = `<div class="card">
+      <h2 style="margin:0 0 4px">Top accounts for ${d.vendor_pair}</h2>
+      <p class="muted">Generated ${d.generated} · validated ${d.validated} · scored ${d.scored} · model ${d.model_used}${d.cached ? " · cached" : ""}</p>
+      ${rows}</div>`;
+  result.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 async function loadGallery() {
   try {
     const items = await (await fetch(`${API}/demo/companies`)).json();
-    const g = document.getElementById("gallery");
-    g.innerHTML = "";
-    items.forEach(it => {
-      const b = document.createElement("button");
-      b.className = "ghost";
-      b.textContent = it.company_name;
-      b.onclick = () => showDemo(it.slug, b);
-      g.appendChild(b);
-    });
-  } catch (e) { /* gallery is optional */ }
-}
-
-function bar(score) { return `<div class="bar"><i style="width:${score * 20}%"></i></div>`; }
-
-function render(resp, tag) {
-  const c = resp.composite;
-  const dims = c.dimension_scores.map(d => `
-    <div class="dim">
-      <div class="dim-head"><span>${d.dimension_name}</span><span>${d.score}/5</span></div>
-      ${bar(d.score)}
-      <div class="muted">${d.reasoning}</div>
-      ${d.evidence && d.evidence.length ? `<details><summary>${d.evidence.length} evidence source(s)</summary>${
-        d.evidence.map(e => `<div class="ev">• <a href="${e.url}" target="_blank" rel="noopener">${e.title}</a></div>`).join("")
-      }</details>` : ""}
-    </div>`).join("");
-  result.innerHTML = `
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <h2 style="margin:0">${resp.company_name}</h2>
-        <span class="badge ${tierClass(c.tier)}">${c.tier}</span>
-      </div>
-      <div class="total">${c.total_score}<span class="muted" style="font-size:1rem">/25</span></div>
-      ${resp.summary ? `<div class="summary-box">${resp.summary}</div>` : ""}
-      ${dims}
-      <p class="muted" style="margin-top:16px">${tag}</p>
-    </div>`;
-  result.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-async function showDemo(slug, btn) {
-  const old = btn.textContent; btn.disabled = true; btn.textContent = "Loading…";
-  try {
-    const resp = await (await fetch(`${API}/demo/scorecard/${slug}`)).json();
-    render(resp, "Pre-computed sample · instant &amp; free");
-  } catch (e) {
-    result.innerHTML = `<div class="card err">Could not load sample.</div>`;
-  } finally { btn.disabled = false; btn.textContent = old; }
+    const g = document.getElementById("gallery"); g.innerHTML = "";
+    items.forEach(it => { const b = document.createElement("button"); b.className = "ghost"; b.textContent = it.company_name;
+      b.onclick = async () => { b.disabled = true; const o = b.textContent; b.textContent = "Loading…";
+        try { renderScore(await (await fetch(`${API}/demo/scorecard/${it.slug}`)).json(), "pre-computed sample · free"); }
+        finally { b.disabled = false; b.textContent = o; } }; g.appendChild(b); });
+  } catch (e) {}
 }
 
 document.getElementById("scoreBtn").onclick = async () => {
   const company = document.getElementById("company").value.trim();
-  const context = document.getElementById("context").value.trim();
   if (!company) { result.innerHTML = `<div class="card err">Please enter a company name.</div>`; return; }
-  const btn = document.getElementById("scoreBtn");
-  btn.disabled = true; btn.textContent = "Scoring…";
-  result.innerHTML = `<div class="card"><span class="spinner"></span> Running 5 agents for <strong>${company}</strong>… this takes ~30–60s.</div>`;
+  const btn = document.getElementById("scoreBtn"); btn.disabled = true; btn.textContent = "Scoring…";
+  result.innerHTML = `<div class="card"><span class="spinner"></span> Running 5 agents for <strong>${company}</strong>… ~30–60s.</div>`;
   try {
-    const res = await fetch(`${API}/score`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ company_name: company, optional_context: context || null }),
-    });
-    if (res.status === 429) {
-      const d = await res.json();
-      result.innerHTML = `<div class="card err">${d.detail || "Daily demo limit reached."}</div>`;
-    } else if (!res.ok) {
-      const d = await res.json().catch(() => ({}));
-      result.innerHTML = `<div class="card err">Scoring failed: ${d.detail || res.status}</div>`;
-    } else {
-      render(await res.json(), `Live · model: ${(await (await fetch(`${API}/health`)).json()).model}`);
-    }
-  } catch (e) {
-    result.innerHTML = `<div class="card err">Network error: ${e}</div>`;
-  } finally { btn.disabled = false; btn.textContent = "Score live"; }
+    const res = await fetch(`${API}/score`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ company_name: company, optional_context: document.getElementById("context").value.trim() || null }) });
+    const d = await res.json().catch(() => ({}));
+    if (res.status === 429) result.innerHTML = `<div class="card err">${d.detail || "Daily demo limit reached."}</div>`;
+    else if (!res.ok) result.innerHTML = `<div class="card err">Scoring failed: ${d.detail || res.status}</div>`;
+    else renderScore(d, `live · ${d.model_used}`);
+  } catch (e) { result.innerHTML = `<div class="card err">Network error: ${e}</div>`; }
+  finally { btn.disabled = false; btn.textContent = "Score live"; }
+};
+
+document.getElementById("discoverBtn").onclick = async () => {
+  const vendor = document.getElementById("vendor").value.trim();
+  if (!vendor) { result.innerHTML = `<div class="card err">Please enter a vendor pair.</div>`; return; }
+  const n = parseInt(document.getElementById("ncand").value, 10);
+  const btn = document.getElementById("discoverBtn"); btn.disabled = true; btn.textContent = "Discovering…";
+  result.innerHTML = `<div class="card"><span class="spinner"></span> Discovering accounts for <strong>${vendor}</strong>… generating, validating &amp; scoring candidates (~1–2 min).</div>`;
+  try {
+    const res = await fetch(`${API}/discover`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vendor_pair: vendor, n_candidates: n }) });
+    const d = await res.json().catch(() => ({}));
+    if (res.status === 429) result.innerHTML = `<div class="card err">${d.detail || "Daily demo limit reached."}</div>`;
+    else if (!res.ok) result.innerHTML = `<div class="card err">Discovery failed: ${d.detail || res.status}</div>`;
+    else renderDiscovery(d);
+  } catch (e) { result.innerHTML = `<div class="card err">Network error: ${e}</div>`; }
+  finally { btn.disabled = false; btn.textContent = "Discover"; }
 };
 
 loadGallery();
