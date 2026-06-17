@@ -1,0 +1,23 @@
+# Never bake secrets into the image — keys are injected at runtime via env_file.
+.env
+.env.*
+!.env.example
+
+# Caches / artifacts
+.git
+.github
+.cache
+.pytest_cache
+.mypy_cache
+.ruff_cache
+**/__pycache__
+*.pyc
+build
+dist
+*.egg-info
+.venv
+venv
+
+# Tests and docs aren't needed in the runtime image
+tests
+*.bak-cas

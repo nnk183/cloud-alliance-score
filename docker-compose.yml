@@ -1,0 +1,44 @@
+# Run the scorer's API + UI with no local Python install — just Docker.
+#
+#   1. cp .env.example .env   # add ANTHROPIC_API_KEY + TAVILY_API_KEY
+#   2. docker compose up --build
+#
+#   API  -> http://localhost:8000  (docs at /docs)
+#   UI   -> http://localhost:8501
+#
+# Keys are read at runtime from your local .env (never baked into the image).
+
+services:
+  api:
+    build: .
+    image: cloud-alliance-score
+    env_file: .env
+    ports:
+      - "8000:8000"
+    # Persist the disk cache across restarts so repeat scores stay free.
+    volumes:
+      - cache:/app/.cache
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  ui:
+    # Reuse the image the `api` service builds.
+    image: cloud-alliance-score
+    build: .
+    depends_on:
+      - api
+    env_file: .env
+    ports:
+      - "8501:8501"
+    volumes:
+      - cache:/app/.cache
+    command: >
+      streamlit run app/streamlit_app.py
+      --server.port 8501
+      --server.address 0.0.0.0
+
+volumes:
+  cache:

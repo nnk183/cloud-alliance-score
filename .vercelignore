@@ -1,0 +1,14 @@
+# Keep the Vercel deployment lean — exclude things the function/site don't need.
+tests
+app
+scripts
+.cache
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.github
+Dockerfile
+docker-compose.yml
+Makefile
+EXAMPLES.md
+*.bak-cas

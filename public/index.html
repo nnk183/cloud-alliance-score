@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cloud Alliance Score — LangChain × GCP</title>
+<meta name="description" content="Score companies as cloud alliance accounts for a LangChain × GCP partnership across five dimensions." />
+<style>
+  :root {
+    --bg: #0d1117; --card: #161b22; --line: #30363d; --text: #e6edf3;
+    --muted: #8b949e; --accent: #2f81f7;
+    --t1: #3fb950; --t2: #d29922; --t3: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 1.8rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 28px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: 6px; }
+  input[type=text] {
+    width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line);
+    background: #0d1117; color: var(--text); font-size: 1rem;
+  }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+  .row > div { flex: 1; min-width: 180px; }
+  button {
+    padding: 10px 18px; border-radius: 8px; border: 0; background: var(--accent);
+    color: white; font-weight: 600; font-size: .95rem; cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); font-weight: 500; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .muted { color: var(--muted); font-size: .85rem; }
+  .badge { display: inline-block; padding: 3px 12px; border-radius: 999px; font-weight: 700; font-size: .9rem; }
+  .t1 { background: rgba(63,185,80,.15); color: var(--t1); }
+  .t2 { background: rgba(210,153,34,.15); color: var(--t2); }
+  .t3 { background: rgba(248,81,73,.15); color: var(--t3); }
+  .total { font-size: 2rem; font-weight: 800; margin: 6px 0; }
+  .dim { margin: 14px 0; }
+  .dim-head { display: flex; justify-content: space-between; font-weight: 600; }
+  .bar { height: 8px; border-radius: 999px; background: #21262d; margin: 6px 0; overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: var(--accent); }
+  details { margin-top: 6px; }
+  summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
+  .ev { font-size: .82rem; color: var(--muted); margin: 6px 0 0 14px; }
+  .ev a { color: var(--accent); }
+  .summary-box { background: rgba(47,129,247,.08); border: 1px solid rgba(47,129,247,.25); border-radius: 8px; padding: 12px 14px; margin: 14px 0; }
+  .err { color: var(--t3); }
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  footer { margin-top: 30px; color: var(--muted); font-size: .8rem; text-align: center; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>☁️ Cloud Alliance Score</h1>
+  <p class="sub">Scoring companies as <strong>LangChain × GCP</strong> alliance accounts across 5 dimensions.</p>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label for="company">Company name</label>
+        <input id="company" type="text" placeholder="e.g. Spotify" />
+      </div>
+      <div>
+        <label for="context">Optional context</label>
+        <input id="context" type="text" placeholder="e.g. music streaming" />
+      </div>
+      <button id="scoreBtn">Score live</button>
+    </div>
+    <p class="muted" id="liveNote" style="margin:12px 0 0">
+      Live scoring runs 5 AI agents (~30–60s). Or explore pre-scored examples below — instant &amp; free.
+    </p>
+    <div class="chips" id="gallery"></div>
+  </div>
+
+  <div id="result"></div>
+
+  <footer>
+    Built with LangGraph · Claude · Tavily · LangSmith ·
+    <a href="https://github.com" id="repoLink">source</a>
+  </footer>
+</div>
+
+<script>
+const API = "/api";
+const result = document.getElementById("result");
+const tierClass = t => ({ "Tier 1": "t1", "Tier 2": "t2", "Tier 3": "t3" }[t] || "t2");
+
+async function loadGallery() {
+  try {
+    const items = await (await fetch(`${API}/demo/companies`)).json();
+    const g = document.getElementById("gallery");
+    g.innerHTML = "";
+    items.forEach(it => {
+      const b = document.createElement("button");
+      b.className = "ghost";
+      b.textContent = it.company_name;
+      b.onclick = () => showDemo(it.slug, b);
+      g.appendChild(b);
+    });
+  } catch (e) { /* gallery is optional */ }
+}
+
+function bar(score) { return `<div class="bar"><i style="width:${score * 20}%"></i></div>`; }
+
+function render(resp, tag) {
+  const c = resp.composite;
+  const dims = c.dimension_scores.map(d => `
+    <div class="dim">
+      <div class="dim-head"><span>${d.dimension_name}</span><span>${d.score}/5</span></div>
+      ${bar(d.score)}
+      <div class="muted">${d.reasoning}</div>
+      ${d.evidence && d.evidence.length ? `<details><summary>${d.evidence.length} evidence source(s)</summary>${
+        d.evidence.map(e => `<div class="ev">• <a href="${e.url}" target="_blank" rel="noopener">${e.title}</a></div>`).join("")
+      }</details>` : ""}
+    </div>`).join("");
+  result.innerHTML = `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h2 style="margin:0">${resp.company_name}</h2>
+        <span class="badge ${tierClass(c.tier)}">${c.tier}</span>
+      </div>
+      <div class="total">${c.total_score}<span class="muted" style="font-size:1rem">/25</span></div>
+      ${resp.summary ? `<div class="summary-box">${resp.summary}</div>` : ""}
+      ${dims}
+      <p class="muted" style="margin-top:16px">${tag}</p>
+    </div>`;
+  result.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function showDemo(slug, btn) {
+  const old = btn.textContent; btn.disabled = true; btn.textContent = "Loading…";
+  try {
+    const resp = await (await fetch(`${API}/demo/scorecard/${slug}`)).json();
+    render(resp, "Pre-computed sample · instant &amp; free");
+  } catch (e) {
+    result.innerHTML = `<div class="card err">Could not load sample.</div>`;
+  } finally { btn.disabled = false; btn.textContent = old; }
+}
+
+document.getElementById("scoreBtn").onclick = async () => {
+  const company = document.getElementById("company").value.trim();
+  const context = document.getElementById("context").value.trim();
+  if (!company) { result.innerHTML = `<div class="card err">Please enter a company name.</div>`; return; }
+  const btn = document.getElementById("scoreBtn");
+  btn.disabled = true; btn.textContent = "Scoring…";
+  result.innerHTML = `<div class="card"><span class="spinner"></span> Running 5 agents for <strong>${company}</strong>… this takes ~30–60s.</div>`;
+  try {
+    const res = await fetch(`${API}/score`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ company_name: company, optional_context: context || null }),
+    });
+    if (res.status === 429) {
+      const d = await res.json();
+      result.innerHTML = `<div class="card err">${d.detail || "Daily demo limit reached."}</div>`;
+    } else if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      result.innerHTML = `<div class="card err">Scoring failed: ${d.detail || res.status}</div>`;
+    } else {
+      render(await res.json(), `Live · model: ${(await (await fetch(`${API}/health`)).json()).model}`);
+    }
+  } catch (e) {
+    result.innerHTML = `<div class="card err">Network error: ${e}</div>`;
+  } finally { btn.disabled = false; btn.textContent = "Score live"; }
+};
+
+loadGallery();
+</script>
+</body>
+</html>
