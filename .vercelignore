@@ -1,3 +1,8 @@
+# Never bundle local secrets into the deployment — keys belong in Vercel env vars.
+.env
+.env.*
+!.env.example
+
 # Keep the Vercel deployment lean — exclude things the function/site don't need.
 tests
 app
